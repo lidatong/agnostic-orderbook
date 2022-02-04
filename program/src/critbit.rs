@@ -186,33 +186,33 @@ struct SlabHeader {
 pub const SLAB_HEADER_LEN: usize = 97;
 pub const PADDED_SLAB_HEADER_LEN: usize = SLAB_HEADER_LEN + 7;
 
-pub struct Slab<'a> {
+pub struct Slab {
     header: SlabHeader,
-    pub buffer: Rc<RefCell<&'a mut [u8]>>,
+    pub buffer: [u8],
     pub callback_info_len: usize,
 }
 
 // Data access methods
-impl<'a> Slab<'a> {
+impl Slab {
     pub fn check(&self, side: Side) -> bool {
         match side {
             Side::Bid => self.header.account_tag == AccountTag::Bids,
             Side::Ask => self.header.account_tag == AccountTag::Asks,
         }
     }
-    pub fn new_from_acc_info(acc_info: &AccountInfo<'a>, callback_info_len: usize) -> Self {
+    pub fn new_from_acc_info(acc_info: &AccountInfo<'_>, callback_info_len: usize) -> Self {
         // assert_eq!(len_without_header % slot_size, 0);
         Self {
-            buffer: Rc::clone(&acc_info.data),
+            buffer: acc_info.data.borrow().to_owned().into(),
             callback_info_len,
-            header: SlabHeader::deserialize(&mut (&acc_info.data.borrow() as &[u8])).unwrap(),
+            header: SlabHeader::deserialize(*acc_info.try_borrow_data()?).unwrap(),
         }
     }
 
-    pub fn new(buffer: Rc<RefCell<&'a mut [u8]>>, callback_info_len: usize) -> Self {
+    pub fn new(buffer: &mut [u8]>, callback_info_len: usize) -> Self {
         Self {
             header: SlabHeader::deserialize(&mut (&buffer.borrow() as &[u8])).unwrap(),
-            buffer: Rc::clone(&buffer),
+            buffer: acc_info.data.borrow().to_owned().into(),
             callback_info_len,
         }
     }

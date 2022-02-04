@@ -63,4 +63,7 @@ pub(crate) mod orderbook;
 pub(crate) mod processor;
 pub mod utils;
 
+pub mod serum_metadata;
+pub mod serum_critbit;
+
 declare_id!("aaobKniTtDGvCZces7GH5UReLYP671bBkB96ahr9x3e");
