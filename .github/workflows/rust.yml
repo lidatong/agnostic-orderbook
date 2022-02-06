@@ -12,9 +12,11 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
-    - name: Build
-      run: cargo build --verbose
-    - name: Lint
-      run: cargo clippy
+    - name: Build and lint
+      run: cargo clippy --verbose -- -D warnings
     - name: Run tests
       run: cargo test --verbose
+
+defaults:
+  run:
+    working-directory: program
