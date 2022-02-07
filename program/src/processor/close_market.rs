@@ -81,7 +81,7 @@ pub fn process<'a, 'b: 'a>(
     check_accounts(&accounts, &market_state)?;
 
     // Check if there are still orders in the book
-    let orderbook_state = OrderBookState::new_safe(
+    let orderbook_state = OrderBookState::new(
         accounts.bids,
         accounts.asks,
         market_state.callback_info_len as usize,

@@ -25,7 +25,7 @@ use crate::common::utils::{create_market_and_accounts, sign_send_instructions};
 async fn test_agnostic_orderbook() {
     // Create program and test environment
 
-    let mut program_test = ProgramTest::new(
+    let (mut program_test, payer, recent_blockhash) = ProgramTest::new(
         "agnostic_orderbook",
         agnostic_orderbook::ID,
         processor!(agnostic_orderbook::entrypoint::process_instruction),
@@ -83,11 +83,12 @@ async fn test_agnostic_orderbook() {
 
     // Create Market context
     let mut prg_test_ctx = program_test.start_with_context().await;
+    println!("");
 
     // Create market state account
     let market_account = Keypair::new();
     let create_market_account_instruction = create_account(
-        &prg_test_ctx.payer.pubkey(),
+        payer.pubkey(),
         &market_account.pubkey(),
         1_000_000,
         1_000_000,
@@ -104,7 +105,7 @@ async fn test_agnostic_orderbook() {
     // Create event queue account
     let event_queue_account = Keypair::new();
     let create_event_queue_account_instruction = create_account(
-        &prg_test_ctx.payer.pubkey(),
+        payer.pubkey(),
         &event_queue_account.pubkey(),
         1_000_000,
         1_000_000,
@@ -135,7 +136,7 @@ async fn test_agnostic_orderbook() {
 
     // Transfer the cranking fee
     let transfer_new_order_fee_instruction = transfer(
-        &prg_test_ctx.payer.pubkey(),
+        payer.pubkey(),
         &market_account,
         cranker_reward,
     );
@@ -178,7 +179,7 @@ async fn test_agnostic_orderbook() {
 
     // Transfer the fee, again
     let transfer_new_order_fee_instruction = transfer(
-        &prg_test_ctx.payer.pubkey(),
+        payer.pubkey(),
         &market_account,
         cranker_reward + 1,
     );
@@ -269,7 +270,7 @@ async fn test_agnostic_orderbook() {
     // Create reward target account
     let reward_target = Keypair::new();
     let create_reward_target_account_instruction = create_account(
-        &prg_test_ctx.payer.pubkey(),
+        payer.pubkey(),
         &reward_target.pubkey(),
         1_000_000_000,
         1,

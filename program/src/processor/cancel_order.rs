@@ -92,7 +92,7 @@ pub fn process<'a, 'b: 'a>(
 
     let callback_info_len = market_state.callback_info_len as usize;
 
-    let mut order_book = OrderBookState::new_safe(
+    let mut order_book = OrderBookState::new(
         accounts.bids,
         accounts.asks,
         market_state.callback_info_len as usize,
