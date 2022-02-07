@@ -83,7 +83,6 @@ pub fn process<'a, 'b: 'a>(
     accounts: Accounts<'a, AccountInfo<'b>>,
     params: Params,
 ) -> ProgramResult {
-    msg!("owner is {}", accounts.event_queue.owner);
     accounts.perform_checks(program_id)?;
     let Params {
         caller_authority,
