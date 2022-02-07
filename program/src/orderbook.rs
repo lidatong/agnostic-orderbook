@@ -29,16 +29,22 @@ pub struct OrderSummary {
 /// The serialized size of an OrderSummary object.
 pub const ORDER_SUMMARY_SIZE: u32 = 41;
 
-pub(crate) struct OrderBookState {
-    bids: Slab,
-    asks: Slab,
+pub(crate) struct OrderBookState<'a, 'b>
+where
+    'b: 'a,
+{
+    bids: Slab<'a, 'b>,
+    asks: Slab<'a, 'b>,
     callback_id_len: usize,
 }
 
-impl OrderBookState {
-    pub(crate) fn new(
-        bids_account: &AccountInfo,
-        asks_account: &AccountInfo,
+impl<'a, 'b> OrderBookState<'a, 'b>
+where
+    'b: 'a,
+{
+    pub(crate) fn new_safe(
+        bids_account: &'a AccountInfo<'b>,
+        asks_account: &'a AccountInfo<'b>,
         callback_info_len: usize,
         callback_id_len: usize,
     ) -> Result<Self, ProgramError> {
@@ -73,7 +79,7 @@ impl OrderBookState {
         (best_bid_price, best_ask_price)
     }
 
-    pub fn get_tree(&mut self, side: Side) -> &mut Slab {
+    pub fn get_tree(&mut self, side: Side) -> &mut Slab<'a, 'b> {
         match side {
             Side::Bid => &mut self.bids,
             Side::Ask => &mut self.asks,
@@ -151,10 +157,10 @@ impl OrderBookState {
             // is needed for it.
             if self_trade_behavior != SelfTradeBehavior::DecrementTake {
                 let order_would_self_trade = &callback_info[..self.callback_id_len]
-                    == self
+                    == (self
                         .get_tree(side.opposite())
                         .get_callback_info(best_bo_ref.callback_info_pt as usize)
-                        as &[u8];
+                        as &[u8]);
                 if order_would_self_trade {
                     let best_offer_id = best_bo_ref.order_id();
                     let cancelled_provide_base_qty;

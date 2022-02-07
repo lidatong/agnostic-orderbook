@@ -1,16 +1,14 @@
-use std::convert::TryInto;
-use std::convert::identity;
-
+use crate::error::AoError;
+use crate::state::{AccountTag, Side};
 use borsh::{BorshDeserialize, BorshSerialize};
 use bytemuck::{try_from_bytes, try_from_bytes_mut, Pod, Zeroable};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use solana_program::account_info::AccountInfo;
 use solana_program::pubkey::Pubkey;
-
-use crate::error::{AoError};
-use crate::state::{AccountTag, Side};
-
+use std::cell::RefMut;
+use std::convert::identity;
+use std::convert::TryInto;
 // A Slab contains the data for a slab header and an array of nodes of a critbit tree
 // whose leafs contain the data referencing an order of the orderbook.
 
@@ -104,13 +102,6 @@ pub enum NodeRefMut<'a> {
     Free(&'a mut FreeNode),
     LastFree(&'a mut FreeNode),
 }
-impl<'a> NodeRefMut<'a> {
-    fn set_next_free(&mut self, free_list_head: u32) {
-        if let NodeRefMut::Free(free_node) = self {
-            free_node.next = free_list_head;
-        }
-    }
-}
 
 impl<'a> Node {
     pub fn as_leaf(&self) -> Option<&LeafNode> {
@@ -149,14 +140,14 @@ impl<'a> NodeRef<'a> {
         }
     }
 
-    fn children(&self) -> Option<&[u32; 2]> {
+    fn children(&self) -> Option<&'a [u32; 2]> {
         match &self {
             Self::Inner(i) => Some(&i.children),
             _ => None,
         }
     }
 
-    pub fn as_leaf(&self) -> Option<&LeafNode> {
+    pub fn as_leaf(&self) -> Option<&'a LeafNode> {
         match &self {
             Self::Leaf(leaf_ref) => Some(leaf_ref),
             _ => None,
@@ -195,50 +186,55 @@ struct SlabHeader {
 pub const SLAB_HEADER_LEN: usize = 97;
 pub const PADDED_SLAB_HEADER_LEN: usize = SLAB_HEADER_LEN + 7;
 
-pub struct Slab {
+pub struct Slab<'a, 'b>
+where
+    'b: 'a,
+{
     header: SlabHeader,
-    pub buffer: Vec<u8>,
+    pub buffer: RefMut<'a, &'b mut [u8]>,
     pub callback_info_len: usize,
 }
 
 // Data access methods
-impl Slab {
+impl<'a, 'b> Slab<'a, 'b> {
     pub fn check(&self, side: Side) -> bool {
         match side {
             Side::Bid => self.header.account_tag == AccountTag::Bids,
             Side::Ask => self.header.account_tag == AccountTag::Asks,
         }
     }
-
-    pub fn new_from_acc_info(acc_info: &AccountInfo, callback_info_len: usize) -> Self {
+    pub fn new_from_acc_info(acc_info: &'a AccountInfo<'b>, callback_info_len: usize) -> Self
+    where
+        'b: 'a,
+    {
+        let header = SlabHeader::deserialize(&mut (&acc_info.data.borrow() as &[u8])).unwrap();
         // assert_eq!(len_without_header % slot_size, 0);
-        let buffer = acc_info.try_borrow_data().unwrap().to_vec();
         Self {
-            // FIXME zero copy
-            header: BorshDeserialize::deserialize(&mut buffer.as_slice()).unwrap(),
-            buffer,
+            // FIXME (leina): unwrap
+            buffer: acc_info.try_borrow_mut_data().unwrap(),
             callback_info_len,
+            header,
         }
     }
 
-    pub fn new(buffer: &mut [u8], callback_info_len: usize) -> Self {
-        let buffer = buffer.to_vec();
+    pub fn new(buffer: RefMut<'a, &'b mut [u8]>, callback_info_len: usize) -> Self {
+        let header = SlabHeader::deserialize(&mut (&buffer as &[u8])).unwrap();
         Self {
-            // FIXME zero copy
-            header: BorshDeserialize::deserialize(&mut buffer.as_slice()).unwrap(),
+            header,
+            // FIXME (leina): unwrap
             buffer,
             callback_info_len,
         }
     }
 
     pub(crate) fn write_header(&mut self) {
-        // FIXME unwrap
+        // TODO (leina): i don't understand this
         self.header
             .serialize(&mut &mut self.buffer[..SLAB_HEADER_LEN])
-            .unwrap();
+            .unwrap()
     }
 
-    pub(crate) fn initialize<'a>(
+    pub(crate) fn initialize(
         bids_account: &AccountInfo<'a>,
         asks_account: &AccountInfo<'a>,
         market_address: Pubkey,
@@ -279,7 +275,7 @@ impl Slab {
 }
 
 // Tree nodes manipulation methods
-impl Slab {
+impl<'a, 'b> Slab<'a, 'b> {
     fn capacity(&self) -> u64 {
         ((self.buffer.len() - PADDED_SLAB_HEADER_LEN) / (2 * SLOT_SIZE + self.callback_info_len))
             as u64
@@ -297,16 +293,21 @@ impl Slab {
         offset += NODE_TAG_SIZE;
         let node = match node_tag {
             NodeTag::Leaf => {
-                // FIXME unwrap
-                NodeRef::Leaf(try_from_bytes(&self.buffer[offset..offset + NODE_SIZE]).unwrap())
+                // let node: Ref<LeafNode> = Ref::map(self.buffer, |s| {
+                //     try_from_bytes(&s[offset..offset + NODE_SIZE]).unwrap()
+                // });
+                let node: &LeafNode =
+                    try_from_bytes(&self.buffer[offset..offset + NODE_SIZE]).unwrap();
+                NodeRef::Leaf(node)
             }
             NodeTag::Inner => {
-                // FIXME unwrap
-                NodeRef::Inner(try_from_bytes(&self.buffer[offset..offset + NODE_SIZE]).unwrap())
+                let node: &InnerNode =
+                    try_from_bytes(&self.buffer[offset..offset + NODE_SIZE]).unwrap();
+                NodeRef::Inner(node)
             }
             NodeTag::Free | NodeTag::LastFree => {
-                // FIXME unwrap
-                let node = try_from_bytes(&self.buffer[offset..offset + FREE_NODE_SIZE]).unwrap();
+                let node: &FreeNode =
+                    try_from_bytes(&self.buffer[offset..offset + FREE_NODE_SIZE]).unwrap();
                 match node_tag {
                     NodeTag::Free => NodeRef::Free(node),
                     NodeTag::LastFree => NodeRef::LastFree(node),
@@ -330,20 +331,17 @@ impl Slab {
         offset += NODE_TAG_SIZE;
         let node = match node_tag {
             NodeTag::Leaf => {
-                // FIXME unwrap
-                NodeRefMut::Leaf(
-                    try_from_bytes_mut(&mut self.buffer[offset..offset + NODE_SIZE]).unwrap(),
-                )
+                let node: &mut LeafNode =
+                    try_from_bytes_mut(&mut self.buffer[offset..offset + NODE_SIZE]).unwrap();
+                NodeRefMut::Leaf(node)
             }
             NodeTag::Inner => {
-                // FIXME unwrap
-                NodeRefMut::Inner(
-                    try_from_bytes_mut(&mut self.buffer[offset..offset + NODE_SIZE]).unwrap(),
-                )
+                let node: &mut InnerNode =
+                    try_from_bytes_mut(&mut self.buffer[offset..offset + NODE_SIZE]).unwrap();
+                NodeRefMut::Inner(node)
             }
             NodeTag::Free | NodeTag::LastFree => {
-                // FIXME unwrap
-                let node =
+                let node: &mut FreeNode =
                     try_from_bytes_mut(&mut self.buffer[offset..offset + FREE_NODE_SIZE]).unwrap();
                 match node_tag {
                     NodeTag::Free => NodeRefMut::Free(node),
@@ -362,7 +360,7 @@ impl Slab {
                 return Err(std::io::ErrorKind::UnexpectedEof.into());
             }
 
-            if self.header.bump_index == u32::MAX as u64 {
+            if self.header.bump_index == std::u32::MAX as u64 {
                 return Err(std::io::ErrorKind::UnexpectedEof.into());
             }
             let key = self.header.bump_index;
@@ -459,10 +457,11 @@ impl Slab {
         } else {
             NodeTag::Free
         };
-        *try_from_bytes_mut(&mut self.buffer[offset..offset + 8]).unwrap() = new_tag as u64;
         let free_list_head = self.header.free_list_head;
-        let mut node = self.get_node_mut(key).unwrap();
-        node.set_next_free(free_list_head);
+        *try_from_bytes_mut(&mut self.buffer[offset..offset + 8]).unwrap() = new_tag as u64;
+        if let NodeRefMut::Free(mut new_free_node) = self.get_node_mut(key).unwrap() {
+            new_free_node.next = free_list_head
+        };
 
         self.header.free_list_head = key;
         self.header.free_list_len += 1;
@@ -523,7 +522,7 @@ impl Slab {
 }
 
 // Critbit tree walks
-impl Slab {
+impl<'a, 'b> Slab<'a, 'b> {
     pub fn root(&self) -> Option<NodeHandle> {
         if self.header.leaf_count == 0 {
             return None;
@@ -752,8 +751,8 @@ impl Slab {
 
     #[cfg(test)]
     fn traverse<T: CallbackInfo>(&self) -> Vec<(Node, T)> {
-        fn walk_rec<S: CallbackInfo>(
-            slab: &Slab,
+        fn walk_rec<'a, S: CallbackInfo>(
+            slab: &'a Slab,
             sub_root: NodeHandle,
             buf: &mut Vec<(Node, S)>,
         ) {
@@ -806,7 +805,7 @@ impl Slab {
             offset += SLOT_SIZE;
         }
         // println!("Data:");
-        // hexdump::hexdump(&self.buffer[SLAB_HEADER_LEN..]);
+        // hexdump::hexdump(&self.buffer.borrow()[SLAB_HEADER_LEN..]);
     }
 
     #[cfg(test)]
@@ -918,9 +917,10 @@ impl CallbackInfo for Pubkey {
 
 #[cfg(test)]
 mod tests {
-    use rand::prelude::*;
 
     use super::*;
+    use std::cell::RefCell;
+    use rand::prelude::*;
 
     // #[test]
     // fn test_node_serialization() {
@@ -943,27 +943,27 @@ mod tests {
         use std::collections::BTreeMap;
 
         for trial in 0..10u64 {
-            let buffer = vec![0u8; 80_000];
-            let order_capacity = (buffer.len() - PADDED_SLAB_HEADER_LEN) / (SLOT_SIZE * 2 + 32);
+            let mut bytes = vec![0u8; 80_000];
+            let order_capacity = (bytes.len() - PADDED_SLAB_HEADER_LEN) / (SLOT_SIZE * 2 + 32);
+            let slab_data = RefCell::new(&mut bytes[..]);
 
             let callback_memory_offset = PADDED_SLAB_HEADER_LEN + 2 * order_capacity * SLOT_SIZE;
-            let header = SlabHeader {
-                account_tag: AccountTag::Asks,
-                bump_index: 0,
-                free_list_len: 0,
-                free_list_head: 0,
-                callback_memory_offset: callback_memory_offset as u64,
-                callback_free_list_len: 0,
-                callback_free_list_head: 0,
-                callback_bump_index: callback_memory_offset as u64,
-                root_node: 0,
-                leaf_count: 0,
-                market_address: Pubkey::new_unique(),
-            };
             let mut slab = Slab {
-                header,
+                buffer: slab_data.borrow_mut(),
                 callback_info_len: 32,
-                buffer,
+                header: SlabHeader {
+                    account_tag: AccountTag::Asks,
+                    bump_index: 0,
+                    free_list_len: 0,
+                    free_list_head: 0,
+                    callback_memory_offset: callback_memory_offset as u64,
+                    callback_free_list_len: 0,
+                    callback_free_list_head: 0,
+                    callback_bump_index: callback_memory_offset as u64,
+                    root_node: 0,
+                    leaf_count: 0,
+                    market_address: Pubkey::new_unique(),
+                },
             };
 
             let mut model: BTreeMap<u128, (Node, Pubkey)> = BTreeMap::new();
@@ -1037,27 +1037,27 @@ mod tests {
         use rand::distributions::WeightedIndex;
         use std::collections::BTreeMap;
 
-        let buffer = vec![0u8; 800_000];
-        let order_capacity = (buffer.len() - PADDED_SLAB_HEADER_LEN) / (SLOT_SIZE * 2 + 32);
+        let mut bytes = vec![0u8; 800_000];
+        let order_capacity = (bytes.len() - PADDED_SLAB_HEADER_LEN) / (SLOT_SIZE * 2 + 32);
 
         let callback_memory_offset = PADDED_SLAB_HEADER_LEN + 2 * order_capacity * SLOT_SIZE;
-        let header = SlabHeader {
-            account_tag: AccountTag::Asks,
-            bump_index: 0,
-            free_list_len: 0,
-            free_list_head: 0,
-            callback_memory_offset: callback_memory_offset as u64,
-            callback_free_list_len: 0,
-            callback_free_list_head: 0,
-            callback_bump_index: callback_memory_offset as u64,
-            root_node: 0,
-            leaf_count: 0,
-            market_address: Pubkey::new_unique(),
-        };
+        let slab_data = RefCell::new(&mut bytes[..]);
         let mut slab = Slab {
-            header,
-            buffer,
+            buffer: slab_data.borrow_mut(),
             callback_info_len: 32,
+            header: SlabHeader {
+                account_tag: AccountTag::Asks,
+                bump_index: 0,
+                free_list_len: 0,
+                free_list_head: 0,
+                callback_memory_offset: callback_memory_offset as u64,
+                callback_free_list_len: 0,
+                callback_free_list_head: 0,
+                callback_bump_index: callback_memory_offset as u64,
+                root_node: 0,
+                leaf_count: 0,
+                market_address: Pubkey::new_unique(),
+            },
         };
         let mut model: BTreeMap<u128, (Node, Pubkey)> = BTreeMap::new();
 
