@@ -1,12 +1,7 @@
 //! Create and initialize a new orderbook market
 use bonfida_utils::{BorshSize, InstructionsAccount};
 use borsh::{BorshDeserialize, BorshSerialize};
-use solana_program::{
-    account_info::{next_account_info, AccountInfo},
-    entrypoint::ProgramResult,
-    program_error::ProgramError,
-    pubkey::Pubkey,
-};
+use solana_program::{account_info::{next_account_info, AccountInfo}, entrypoint::ProgramResult, msg, program_error::ProgramError, pubkey::Pubkey};
 
 use crate::{
     critbit::Slab,
@@ -88,6 +83,7 @@ pub fn process<'a, 'b: 'a>(
     accounts: Accounts<'a, AccountInfo<'b>>,
     params: Params,
 ) -> ProgramResult {
+    msg!("owner is {}", accounts.event_queue.owner);
     accounts.perform_checks(program_id)?;
     let Params {
         caller_authority,
