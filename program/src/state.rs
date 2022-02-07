@@ -298,6 +298,7 @@ impl<'a> EventQueue<'a> {
     /// Within a CPI context, the account parameter can be supplied through
     /// ```ignore
     /// use std::rc::Rc;
+    ///
     /// let a: AccountInfo;
     ///
     /// let event_queue_header = EventQueueHeader::deserialize(&mut &a.data.borrow()[..EVENT_QUEUE_HEADER_LEN]).unwrap();

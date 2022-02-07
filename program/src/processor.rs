@@ -4,6 +4,7 @@ use solana_program::{
     account_info::AccountInfo, entrypoint::ProgramResult, msg, program_error::ProgramError,
     pubkey::Pubkey,
 };
+use solana_program::log::sol_log_compute_units;
 
 use crate::instruction::AgnosticOrderbookInstruction;
 
@@ -47,7 +48,11 @@ impl Processor {
                 let accounts = new_order::Accounts::parse(accounts)?;
                 let params = new_order::Params::try_from_slice(instruction_data)
                     .map_err(|_| ProgramError::InvalidInstructionData)?;
+                msg!("Start new order");
+                sol_log_compute_units();
                 new_order::process(program_id, accounts, params)?;
+                msg!("Finish new order");
+                sol_log_compute_units();
             }
             AgnosticOrderbookInstruction::ConsumeEvents => {
                 msg!("Instruction: Consume Events");
