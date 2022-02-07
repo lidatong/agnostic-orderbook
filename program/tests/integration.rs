@@ -31,6 +31,7 @@ fn test_agnostic_orderbook() -> anyhow::Result<()> {
     // rpc_client.request_airdrop(&user.pubkey(), 1_000_000)?;
     // let rpc_client = RpcClient::new_with_commitment("https://api.devnet.solana.com".to_string(), CommitmentConfig::confirmed());
 
+    // Create Event Queue account
     let event_queue = Keypair::new();
     let event_queue_tx = Transaction::new_signed_with_payer(
         &[system_instruction::create_account(
@@ -46,6 +47,7 @@ fn test_agnostic_orderbook() -> anyhow::Result<()> {
     );
     rpc_client.send_and_confirm_transaction(&event_queue_tx)?;
 
+    // Create Bids account
     let bids = Keypair::new();
     let bids_tx = Transaction::new_signed_with_payer(
         &[system_instruction::create_account(
@@ -61,7 +63,7 @@ fn test_agnostic_orderbook() -> anyhow::Result<()> {
     );
     rpc_client.send_and_confirm_transaction(&bids_tx)?;
 
-    // Create asks
+    // Create Asks account
     let asks = Keypair::new();
     let asks_tx = Transaction::new_signed_with_payer(
         &[system_instruction::create_account(
@@ -78,6 +80,8 @@ fn test_agnostic_orderbook() -> anyhow::Result<()> {
     rpc_client.send_and_confirm_transaction(&asks_tx)?;
 
     let blockhash = rpc_client.get_new_latest_blockhash(&blockhash)?; // refresh blockhash
+
+    // Create Market account
     let market = Keypair::new();
     let market_tx = Transaction::new_signed_with_payer(
         &[
@@ -115,6 +119,7 @@ fn test_agnostic_orderbook() -> anyhow::Result<()> {
     let market_state =
         bytemuck::try_from_bytes_mut::<MarketState>(&mut market_data[..MARKET_STATE_LEN])?;
 
+    // Create bid order to buy 1000 units of base for 1000 units of quote
     let new_bid_tx = Transaction::new_signed_with_payer(
         &[new_order(
             new_order::Accounts {
@@ -142,6 +147,8 @@ fn test_agnostic_orderbook() -> anyhow::Result<()> {
     );
     rpc_client.send_and_confirm_transaction(&new_bid_tx)?;
 
+    // Create ask order to sell 1000 units of base for 1000 units quote, and
+    // post an additional 100 units of base
     let new_ask_tx = Transaction::new_signed_with_payer(
         &[new_order(
             new_order::Accounts {
@@ -169,6 +176,7 @@ fn test_agnostic_orderbook() -> anyhow::Result<()> {
     );
     rpc_client.send_and_confirm_transaction(&new_ask_tx)?;
 
+    // Confirm that 1000 units were filled
     let mut market_data = rpc_client.get_account(&market.pubkey())?.data;
     let market_state =
         bytemuck::try_from_bytes_mut::<MarketState>(&mut market_data[..MARKET_STATE_LEN])?;
@@ -185,6 +193,7 @@ fn test_agnostic_orderbook() -> anyhow::Result<()> {
         1000
     );
 
+    // Cancel remaining order, and confirm that cancelled amount == 100
     let new_cancel_tx = Transaction::new_signed_with_payer(
         &[cancel_order(
             cancel_order::Accounts {
