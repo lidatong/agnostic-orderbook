@@ -70,9 +70,9 @@ impl<'a, 'b: 'a> Accounts<'a, AccountInfo<'b>> {
     }
 }
 /// Apply the close_market instruction to the provided accounts
-pub fn process<'a, 'b: 'a>(
+pub fn process(
     program_id: &Pubkey,
-    accounts: Accounts<'a, AccountInfo<'b>>,
+    accounts: Accounts<AccountInfo>,
     _params: Params,
 ) -> ProgramResult {
     accounts.perform_checks(program_id)?;
@@ -81,7 +81,7 @@ pub fn process<'a, 'b: 'a>(
     check_accounts(&accounts, &market_state)?;
 
     // Check if there are still orders in the book
-    let orderbook_state = OrderBookState::new_safe(
+    let orderbook_state = OrderBookState::new(
         accounts.bids,
         accounts.asks,
         market_state.callback_info_len as usize,
@@ -120,6 +120,8 @@ pub fn process<'a, 'b: 'a>(
     **bids_lamports = 0;
     **asks_lamports = 0;
     **event_queue_lamports = 0;
+
+    orderbook_state.cleanup(accounts.bids, accounts.asks);
 
     Ok(())
 }

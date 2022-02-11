@@ -80,9 +80,9 @@ impl<'a, 'b: 'a> Accounts<'a, AccountInfo<'b>> {
     }
 }
 /// Apply the cancel_order instruction to the provided accounts
-pub fn process<'a, 'b: 'a>(
+pub fn process(
     program_id: &Pubkey,
-    accounts: Accounts<'a, AccountInfo<'b>>,
+    accounts: Accounts<AccountInfo>,
     params: Params,
 ) -> ProgramResult {
     accounts.perform_checks(program_id)?;
@@ -92,7 +92,7 @@ pub fn process<'a, 'b: 'a>(
 
     let callback_info_len = market_state.callback_info_len as usize;
 
-    let mut order_book = OrderBookState::new_safe(
+    let mut order_book = OrderBookState::new(
         accounts.bids,
         accounts.asks,
         market_state.callback_info_len as usize,
@@ -124,6 +124,7 @@ pub fn process<'a, 'b: 'a>(
     event_queue.write_to_register(order_summary);
 
     order_book.commit_changes();
+    order_book.cleanup(accounts.bids, accounts.asks);
 
     Ok(())
 }

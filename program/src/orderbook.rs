@@ -1,3 +1,4 @@
+
 use crate::{
     critbit::{LeafNode, Node, NodeHandle, Slab},
     error::AoError,
@@ -29,9 +30,9 @@ pub struct OrderSummary {
 /// The serialized size of an OrderSummary object.
 pub const ORDER_SUMMARY_SIZE: u32 = 41;
 
-pub(crate) struct OrderBookState<'a> {
-    bids: Slab<'a>,
-    asks: Slab<'a>,
+pub(crate) struct OrderBookState<'ob> {
+    bids: Slab<'ob>,
+    asks: Slab<'ob>,
     callback_id_len: usize,
 }
 
@@ -53,6 +54,12 @@ impl<'ob> OrderBookState<'ob> {
             callback_id_len,
         })
     }
+
+    pub fn cleanup(self, bids_account: &AccountInfo<'ob>, asks_account: &AccountInfo<'ob>) {
+        self.bids.replace_acc_info(bids_account);
+        self.asks.replace_acc_info(asks_account);
+    }
+
     pub fn find_bbo(&self, side: Side) -> Option<NodeHandle> {
         match side {
             Side::Bid => self.bids.find_max(),
@@ -80,7 +87,7 @@ impl<'ob> OrderBookState<'ob> {
         }
     }
 
-    pub(crate) fn commit_changes(&self) {
+    pub(crate) fn commit_changes(&mut self) {
         self.bids.write_header();
         self.asks.write_header();
     }
@@ -151,7 +158,7 @@ impl<'ob> OrderBookState<'ob> {
             // is needed for it.
             if self_trade_behavior != SelfTradeBehavior::DecrementTake {
                 let order_would_self_trade = &callback_info[..self.callback_id_len]
-                    == (&self
+                    == (self
                         .get_tree(side.opposite())
                         .get_callback_info(best_bo_ref.callback_info_pt as usize)
                         as &[u8]);
